@@ -8,7 +8,9 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# - Include extra index URL for PyTorch CPU wheels
+RUN pip install --no-cache-dir -r requirements.txt \
+    --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Copy the rest of your project files
 COPY . .

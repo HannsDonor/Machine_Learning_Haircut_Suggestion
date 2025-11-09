@@ -1,10 +1,12 @@
-# Dockerfile
 FROM python:3.10-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV TF_ENABLE_ONEDNN_OPTS=0
+ENV CUDA_VISIBLE_DEVICES=""
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
 
-# Install minimal OS deps for OpenCV / mediapipe
 RUN apt-get update && apt-get install -y \
     build-essential \
     libgl1 \
@@ -13,13 +15,11 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy requirements and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY . .
 
-# Ensure start.py is present and is the single CMD entrypoint
+# Ensure start.py exists and is single entrypoint
 COPY start.py .
 CMD ["bash", "-lc", "python start.py"]

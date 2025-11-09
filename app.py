@@ -37,23 +37,25 @@ async def log_requests(request: Request, call_next):
 def health():
     return {"status": "ok"}
 
+# /ready shows whether models finished loading
+models_ready = False
 @app.get("/ready")
 def ready():
     return {"ready": models_ready}
 
-# Runtime flags/placeholders
-models_ready = False
+# analyze wiring
 _analyze_frame = None
 
 # Background loader to import and initialize prototype9 safely
 async def load_models(use_stub: bool = False):
     """
-    Run in background on startup.
-    If use_stub is True, installs a lightweight stub to validate routing without heavy models.
+    Background initialization.
+    - use_stub True installs a minimal stub (fast, low memory) for routing checks.
+    - use_stub False runs prototype9.init_models() (may be memory heavy).
     """
     global models_ready, _analyze_frame
     try:
-        import prototype9  # local module expected in repo
+        import prototype9  # must exist in repo
 
         if use_stub:
             print("Model loader: installing stub (use_stub=True)", flush=True)
@@ -61,7 +63,7 @@ async def load_models(use_stub: bool = False):
             _analyze_frame = prototype9.analyze_frame
             print("Model loader: stub installed", flush=True)
         else:
-            print("Model loader: calling init_models()", flush=True)
+            print("Model loader: init_models (use_stub=False)", flush=True)
             await asyncio.to_thread(prototype9.init_models)
             _analyze_frame = prototype9.analyze_frame
             print("Model loader: finished", flush=True)
@@ -74,10 +76,9 @@ async def load_models(use_stub: bool = False):
 
 @app.on_event("startup")
 async def on_startup():
-    # Use env var to toggle stub without editing code
+    # Toggle via env var without editing code
     use_stub_env = os.environ.get("USE_MODEL_STUB", "false").lower()
     use_stub = use_stub_env in ("1", "true", "yes")
-    # Fire-and-forget background initialization so /health responds immediately
     asyncio.create_task(load_models(use_stub=use_stub))
 
 @app.post("/analyze")

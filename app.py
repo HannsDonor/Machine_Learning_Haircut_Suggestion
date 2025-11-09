@@ -1,13 +1,13 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import numpy as np
 import cv2
 import sys
+import time
 
 app = FastAPI()
 
-# Allow quick browser testing (optional)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,7 +15,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Quick health check that returns immediately
+# Request logging middleware to trace incoming requests and responses
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.time()
+    print(f"REQ START: {request.method} {request.url.path}", flush=True)
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        print(f"REQ ERROR: {request.method} {request.url.path} -> EXC {e}", flush=True)
+        raise
+    duration = time.time() - start
+    print(f"REQ END: {request.method} {request.url.path} -> {response.status_code} in {duration:.3f}s", flush=True)
+    return response
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -29,25 +42,22 @@ async def load_models():
     global models_ready, _analyze_frame
     try:
         # Import heavy code here to avoid blocking module import/startup
-        from prototype9 import analyze_frame as af  # local import
+        from prototype9 import analyze_frame as af
         _analyze_frame = af
 
-        # If prototype9 exposes an explicit init or weight loading call, call it here:
-        # try:
-        #     await maybe_async_init_in_prototype9()
-        # except Exception as e:
-        #     print("Model init failed:", e, file=sys.stderr)
+        # If prototype9 requires explicit init, call it here (example):
+        # if hasattr(af, "init"):
+        #     af.init()
 
         print("Model loader: finished", flush=True)
     except Exception as e:
-        # Print to stdout/stderr so Railway logs capture it
         print("Model loader exception:", e, file=sys.stderr, flush=True)
     finally:
         models_ready = True
 
 @app.on_event("startup")
 async def on_startup():
-    # Start model loading in background; keep /health fast
+    # Start model loading in background so /health responds immediately
     asyncio.create_task(load_models())
 
 @app.post("/analyze")

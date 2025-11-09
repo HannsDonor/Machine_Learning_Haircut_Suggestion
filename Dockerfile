@@ -17,10 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Ensure the container listens on the PORT Railway provides
-CMD ["bash", "-lc", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
-
+# Ensure the container listens on the PORT Railway provides by running start.py
+# start.py should call uvicorn with access logs and read PORT from env
 COPY start.py .
 CMD ["bash", "-lc", "python start.py"]
-
-

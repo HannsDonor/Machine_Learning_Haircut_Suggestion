@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 import sys
 import time
+import traceback
 
 app = FastAPI()
 
@@ -41,17 +42,21 @@ _analyze_frame = None
 async def load_models():
     global models_ready, _analyze_frame
     try:
-        # Import heavy code here to avoid blocking module import/startup
-        from prototype9 import analyze_frame as af
-        _analyze_frame = af
+        # Import the module (lightweight) and run its blocking init off the event loop
+        import prototype9
 
-        # If prototype9 requires explicit init, call it here (example):
-        # if hasattr(af, "init"):
-        #     af.init()
+        # For quick debugging you can use the stub:
+        # await asyncio.to_thread(prototype9.install_stub_for_testing)
+        # _analyze_frame = prototype9.analyze_frame
+
+        # Proper init (runs heavy work in a thread so event loop isn't blocked)
+        await asyncio.to_thread(prototype9.init_models)
+        _analyze_frame = prototype9.analyze_frame
 
         print("Model loader: finished", flush=True)
-    except Exception as e:
-        print("Model loader exception:", e, file=sys.stderr, flush=True)
+    except Exception:
+        print("Model loader exception:", file=sys.stderr, flush=True)
+        traceback.print_exc()
     finally:
         models_ready = True
 
@@ -72,9 +77,11 @@ async def analyze(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Invalid image data")
 
     try:
-        result = _analyze_frame(frame)
-    except Exception as e:
-        print("Analysis error:", e, file=sys.stderr, flush=True)
+        # Run inference in a thread if analyze_frame is CPU-bound to avoid blocking
+        result = await asyncio.to_thread(_analyze_frame, frame)
+    except Exception:
+        print("Analysis error:", file=sys.stderr, flush=True)
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail="Analysis failed")
 
     return {"results": result}

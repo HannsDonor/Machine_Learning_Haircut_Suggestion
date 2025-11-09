@@ -9,8 +9,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from deepface import DeepFace
-import tkinter as tk
-from tkinter import filedialog
+import streamlit as st
 
 # === Paths ===
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -20,10 +19,12 @@ HAIRCUT_DATASET = os.path.join(SCRIPT_DIR, "haircut_v2.csv")
 
 # === Load Datasets ===
 if not os.path.exists(FACE_DATASET):
-    raise FileNotFoundError("❌ Missing face_shape_dataset.csv")
+    st.error("❌ Missing face_shape_dataset.csv")
+    st.stop()
 
 if not os.path.exists(HAIR_MODEL_PATH):
-    raise FileNotFoundError("❌ Missing hair_segmenter.tflite")
+    st.error("❌ Missing hair_segmenter.tflite")
+    st.stop()
 
 face_df = pd.read_csv(FACE_DATASET)
 features = [
@@ -45,24 +46,56 @@ X_scaled = scaler.fit_transform(X)
 rf_face = RandomForestClassifier(n_estimators=150, random_state=42)
 rf_face.fit(X_scaled, y_enc)
 
-# === Choose image ===
-root = tk.Tk()
-root.withdraw()
-image_path = filedialog.askopenfilename(
-    title="Select image to analyze",
-    filetypes=[("Images", "*.jpg *.jpeg *.png *.bmp *.webp")]
-)
+# === Streamlit Web Upload ===
+st.title("Face & Hair Analyzer")
+image_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "bmp", "webp"])
 
-if not image_path:
-    print("❌ No image selected.")
-    exit()
+if image_file is None:
+    st.info("Please upload an image to analyze.")
+    st.stop()
 
-# === Load Hair Segmenter ===
+file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
+frame = cv2.imdecode(file_bytes, 1)
+
+if frame is None:
+    st.error("❌ Cannot read uploaded image.")
+    st.stop()
+
+h, w, _ = frame.shape
+rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+# === Hair Segmentation ===
 base_options = python.BaseOptions(model_asset_path=HAIR_MODEL_PATH)
 options = vision.ImageSegmenterOptions(base_options=base_options, output_category_mask=True)
 segmenter = vision.ImageSegmenter.create_from_options(options)
 
-# === Helpers ===
+mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+result = segmenter.segment(mp_image)
+mask = result.category_mask.numpy_view()
+hair_mask = (mask == 1).astype(np.uint8)
+
+kernel = np.ones((5,5), np.uint8)
+hair_mask = cv2.morphologyEx(hair_mask, cv2.MORPH_CLOSE, kernel)
+hair_mask = cv2.morphologyEx(hair_mask, cv2.MORPH_OPEN, kernel)
+
+# === Face Mesh ===
+mp_face = mp.solutions.face_mesh.FaceMesh(static_image_mode=True, refine_landmarks=True, max_num_faces=1)
+results = mp_face.process(rgb)
+
+if not results.multi_face_landmarks:
+    st.warning("⚠️ No face detected.")
+    st.stop()
+
+points = [(lm.x*w, lm.y*h) for lm in results.multi_face_landmarks[0].landmark]
+top_forehead = np.array(points[10])
+chin = np.array(points[152])
+left_temple = np.array(points[71])
+right_temple = np.array(points[301])
+left_cheek = np.array(points[227])
+right_cheek = np.array(points[447])
+left_jaw = np.array(points[172])
+right_jaw = np.array(points[435])
+
 def safe_div(a, b, eps=1e-6):
     return a / b if abs(b) > eps else 0
 
@@ -75,44 +108,6 @@ def calculate_angle(a, b, c):
     )
     return ang + 360 if ang < 0 else ang
 
-# === Load Image ===
-frame = cv2.imread(image_path)
-if frame is None:
-    print("❌ Cannot read image.")
-    exit()
-
-h, w, _ = frame.shape
-rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-# === Hair Segmentation ===
-mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-result = segmenter.segment(mp_image)
-mask = result.category_mask.numpy_view()
-hair_mask = (mask == 1).astype(np.uint8)
-
-# Clean mask
-kernel = np.ones((5,5), np.uint8)
-hair_mask = cv2.morphologyEx(hair_mask, cv2.MORPH_CLOSE, kernel)
-hair_mask = cv2.morphologyEx(hair_mask, cv2.MORPH_OPEN, kernel)
-
-# === Face Mesh for feature extraction ===
-mp_face = mp.solutions.face_mesh.FaceMesh(static_image_mode=True, refine_landmarks=True, max_num_faces=1)
-results = mp_face.process(rgb)
-
-if not results.multi_face_landmarks:
-    print("⚠️ No face detected.")
-    exit()
-
-points = [(lm.x*w, lm.y*h) for lm in results.multi_face_landmarks[0].landmark]
-top_forehead = np.array(points[10])
-chin = np.array(points[152])
-left_temple = np.array(points[71])
-right_temple = np.array(points[301])
-left_cheek = np.array(points[227])
-right_cheek = np.array(points[447])
-left_jaw = np.array(points[172])
-right_jaw = np.array(points[435])
-
 face_length = euclidean(top_forehead, chin)
 forehead_width = euclidean(left_temple, right_temple)
 cheek_width = euclidean(left_cheek, right_cheek)
@@ -124,7 +119,6 @@ cheek_to_forehead = safe_div(cheek_width, forehead_width)
 left_angle = calculate_angle(left_cheek, left_temple, chin)
 right_angle = -calculate_angle(right_cheek, right_temple, chin)
 
-# === Predict Face Shape ===
 feat = np.array([[face_length, forehead_width, cheek_width, jaw_width,
                   face_ratio, jaw_to_forehead, cheek_to_forehead,
                   left_angle, right_angle]])
@@ -132,7 +126,7 @@ feat_scaled = scaler.transform(feat)
 pred_enc = rf_face.predict(feat_scaled)[0]
 pred_shape = le.inverse_transform([pred_enc])[0].strip().upper()
 
-# === Hair metrics ===
+# === Hair Metrics ===
 ys, xs = np.where(hair_mask > 0)
 if len(ys) > 0:
     top_y, bottom_y = np.min(ys), np.max(ys)
@@ -159,7 +153,7 @@ else:
 
 # === Gender Detection ===
 try:
-    analysis = DeepFace.analyze(img_path=image_path, actions=["gender"], enforce_detection=False)
+    analysis = DeepFace.analyze(img_path=image_file, actions=["gender"], enforce_detection=False)
     detected = analysis[0]["gender"]
     if isinstance(detected, dict):
         gender = "Male" if detected.get("Man", 0) > detected.get("Woman", 0) else "Female"
@@ -169,21 +163,18 @@ except Exception:
     gender = "Unknown"
 
 # === Display results ===
-print("\n===== ANALYSIS RESULTS =====")
-print(f"Face Shape: {pred_shape}")
-print(f"Gender: {gender}")
-print(f"Hair Ratio: {hair_ratio:.3f}")
-print(f"Vertical Extent: {vertical_extent:.3f}")
-print(f"Hair Width: {hair_width:.3f}")
-print(f"Coverage Top: {coverage_top:.2f}%")
-print(f"Texture Estimate: {texture_estimate:.3f}")
-print("============================")
+st.subheader("Analysis Results")
+st.write(f"**Face Shape:** {pred_shape}")
+st.write(f"**Gender:** {gender}")
+st.write(f"**Hair Ratio:** {hair_ratio:.3f}")
+st.write(f"**Vertical Extent:** {vertical_extent:.3f}")
+st.write(f"**Hair Width:** {hair_width:.3f}")
+st.write(f"**Coverage Top:** {coverage_top:.2f}%")
+st.write(f"**Texture Estimate:** {texture_estimate:.3f}")
 
-# === Haircut Suggestion (global averaging per haircut, local popularity per face shape) ===
+# === Haircut Suggestions ===
 if os.path.exists(HAIRCUT_DATASET):
     df = pd.read_csv(HAIRCUT_DATASET)
-
-    # Normalize formatting
     df["face_shape"] = df["face_shape"].astype(str).str.strip().str.upper()
     df["gender"] = df["gender"].astype(str).str.strip().str.lower().replace({
         "malw": "male", "femal": "female", "m": "male", "f": "female"
@@ -193,11 +184,7 @@ if os.path.exists(HAIRCUT_DATASET):
     gender_lower = gender.strip().lower()
     face_shape_upper = pred_shape.strip().upper()
 
-    print(f"\n[DEBUG] Predicted shape: {face_shape_upper}, Gender: {gender_lower}")
-    print("[DEBUG] Dataset face shapes:", df["face_shape"].unique())
-    print("[DEBUG] Dataset genders:", df["gender"].unique())
-
-    # --- Compute Global Averages per Haircut (across all face shapes/genders) ---
+    # Global averages
     global_avg = df.groupby("haircut_name").agg({
         "hair_ratio": "mean",
         "vertical_extent": "mean",
@@ -206,36 +193,19 @@ if os.path.exists(HAIRCUT_DATASET):
         "texture_estimate": "mean"
     }).reset_index()
 
-    # --- Compute Local Popularity (same face shape + gender) ---
+    # Local popularity
     subset = df[(df["face_shape"] == face_shape_upper) & (df["gender"] == gender_lower)]
-
     if not subset.empty:
         popularity = subset["haircut_name"].value_counts().reset_index()
         popularity.columns = ["haircut_name", "count"]
-
-        # Merge global averages with local popularity
         merged = pd.merge(global_avg, popularity, on="haircut_name", how="inner")
-
-        # ✅ Keep only haircuts with avg ratio <= user ratio (plus small tolerance)
         tolerance = 0.02
         merged = merged[merged["hair_ratio"] <= (hair_ratio + tolerance)]
-
         if not merged.empty:
-            # Sort by popularity first, then by closeness in hair ratio
             merged["ratio_diff"] = abs(merged["hair_ratio"] - hair_ratio)
             merged = merged.sort_values(by=["count", "ratio_diff"], ascending=[False, True])
-
-            print("\n💇 Recommended Haircuts (global averages, popular for your face shape):")
+            st.subheader("💇 Recommended Haircuts")
             for i, row in enumerate(merged.itertuples(index=False), 1):
-                print(f"{i}. {row.haircut_name} — {row.count} samples | avg ratio: {row.hair_ratio:.3f}")
-
-            top_haircuts = merged["haircut_name"].tolist()
-        else:
-            print("\n⚠️ No shorter/similar haircuts found within this ratio range.")
-            top_haircuts = []
-    else:
-        print(f"\n⚠️ No matching face shape/gender subset found for {face_shape_upper} / {gender_lower}.")
-        top_haircuts = []
+                st.write(f"{i}. {row.haircut_name} — {row.count} samples | avg ratio: {row.hair_ratio:.3f}")
 else:
-    print("\n❌ haircut_dataset.csv not found.")
-    top_haircuts = []
+    st.warning("❌ haircut_dataset.csv not found.")

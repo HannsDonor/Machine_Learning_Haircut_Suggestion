@@ -1,33 +1,27 @@
-# Use official Python slim image
+# Use lightweight Python image
 FROM python:3.11-slim
+
+# Prevent Python from writing pyc files and buffering output
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # Set working directory
 WORKDIR /app
 
-# Install OS dependencies for OpenCV and general usage
+# Install system dependencies for OpenCV, TensorFlow, and Mediapipe
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    libgl1 \
-    libglib2.0-0 \
-    wget \
-    unzip \
+    libgl1-mesa-glx libglib2.0-0 ffmpeg libsm6 libxext6 git wget curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements.txt
+# Copy dependency list and install Python packages
 COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app code
+# Copy your Flask app files
 COPY . .
 
-# Create uploads directory
-RUN mkdir -p uploads
-
-# Expose the port your Flask app will run on
+# Expose the default port
 EXPOSE 5000
 
-# Command to run the app
+# Command for Railway / gunicorn
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]

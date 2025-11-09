@@ -20,3 +20,7 @@ COPY . .
 # Ensure the container listens on the PORT Railway provides
 CMD ["bash", "-lc", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
 
+COPY start.py .
+CMD ["bash", "-lc", "python start.py"]
+
+

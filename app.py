@@ -3,13 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import numpy as np
 import cv2
-
-# Delay importing prototype9 heavy parts until background load
-# from prototype9 import analyze_frame  <- DO NOT import here if it does heavy work
+import sys
 
 app = FastAPI()
 
-# Allow quick browser testing
+# Allow quick browser testing (optional)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,39 +15,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Health endpoint that returns instantly
+# Quick health check that returns immediately
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-# Flags/placeholders for runtime resources
+# Runtime flags/placeholders
 models_ready = False
 _analyze_frame = None
 
-# Background loader to import or initialize heavy modules
+# Background loader to import heavy modules and initialize models
 async def load_models():
     global models_ready, _analyze_frame
     try:
-        # Import and initialize heavy resources here so imports don't block server start
-        from prototype9 import analyze_frame as af  # imported inside loader
-        # If prototype9 does additional heavy work on import, consider moving that work
-        # into a function inside prototype9 and call it here instead.
+        # Import heavy code here to avoid blocking module import/startup
+        from prototype9 import analyze_frame as af  # local import
         _analyze_frame = af
-        # Example: if you need to load large ML weights, do it here
-        # af.load_weights(...)   # pseudo-call if applicable
+
+        # If prototype9 exposes an explicit init or weight loading call, call it here:
+        # try:
+        #     await maybe_async_init_in_prototype9()
+        # except Exception as e:
+        #     print("Model init failed:", e, file=sys.stderr)
+
+        print("Model loader: finished", flush=True)
     except Exception as e:
-        # Log error to stdout (Railway logs will show this)
-        print("Model load failed:", e)
-    models_ready = True
+        # Print to stdout/stderr so Railway logs capture it
+        print("Model loader exception:", e, file=sys.stderr, flush=True)
+    finally:
+        models_ready = True
 
 @app.on_event("startup")
 async def on_startup():
-    # Start loading models in background so /health responds quickly
+    # Start model loading in background; keep /health fast
     asyncio.create_task(load_models())
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    if not models_ready:
+    if not models_ready or _analyze_frame is None:
         raise HTTPException(status_code=503, detail="Models still loading, try again shortly")
 
     contents = await file.read()
@@ -59,11 +62,9 @@ async def analyze(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Invalid image data")
 
     try:
-        # Use the lazily-imported analyze function
         result = _analyze_frame(frame)
     except Exception as e:
-        # Return a 500 with minimal info and print the error for logs
-        print("Analysis error:", e)
+        print("Analysis error:", e, file=sys.stderr, flush=True)
         raise HTTPException(status_code=500, detail="Analysis failed")
 
     return {"results": result}

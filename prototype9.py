@@ -9,7 +9,6 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from deepface import DeepFace
-import streamlit as st
 
 # === Paths ===
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,15 +16,16 @@ HAIR_MODEL_PATH = os.path.join(SCRIPT_DIR, "hair_segmenter.tflite")
 FACE_DATASET = os.path.join(SCRIPT_DIR, "face_shape_dataset.csv")
 HAIRCUT_DATASET = os.path.join(SCRIPT_DIR, "haircut_v2.csv")
 
-# === Load Datasets ===
+# === Check files ===
 if not os.path.exists(FACE_DATASET):
-    st.error("❌ Missing face_shape_dataset.csv")
-    st.stop()
+    print("❌ Missing face_shape_dataset.csv")
+    exit()
 
 if not os.path.exists(HAIR_MODEL_PATH):
-    st.error("❌ Missing hair_segmenter.tflite")
-    st.stop()
+    print("❌ Missing hair_segmenter.tflite")
+    exit()
 
+# === Load datasets and train model ===
 face_df = pd.read_csv(FACE_DATASET)
 features = [
     "face_length", "forehead_width", "cheek_width", "jaw_width",
@@ -46,20 +46,16 @@ X_scaled = scaler.fit_transform(X)
 rf_face = RandomForestClassifier(n_estimators=150, random_state=42)
 rf_face.fit(X_scaled, y_enc)
 
-# === Streamlit Web Upload ===
-st.title("Face & Hair Analyzer")
-image_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "bmp", "webp"])
+# === Image input ===
+image_path = input("Enter path to image: ")
+if not os.path.exists(image_path):
+    print(f"❌ Image not found: {image_path}")
+    exit()
 
-if image_file is None:
-    st.info("Please upload an image to analyze.")
-    st.stop()
-
-file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
-frame = cv2.imdecode(file_bytes, 1)
-
+frame = cv2.imread(image_path)
 if frame is None:
-    st.error("❌ Cannot read uploaded image.")
-    st.stop()
+    print("❌ Cannot read uploaded image.")
+    exit()
 
 h, w, _ = frame.shape
 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -83,8 +79,8 @@ mp_face = mp.solutions.face_mesh.FaceMesh(static_image_mode=True, refine_landmar
 results = mp_face.process(rgb)
 
 if not results.multi_face_landmarks:
-    st.warning("⚠️ No face detected.")
-    st.stop()
+    print("⚠️ No face detected.")
+    exit()
 
 points = [(lm.x*w, lm.y*h) for lm in results.multi_face_landmarks[0].landmark]
 top_forehead = np.array(points[10])
@@ -153,7 +149,7 @@ else:
 
 # === Gender Detection ===
 try:
-    analysis = DeepFace.analyze(img_path=image_file, actions=["gender"], enforce_detection=False)
+    analysis = DeepFace.analyze(img_path=image_path, actions=["gender"], enforce_detection=False)
     detected = analysis[0]["gender"]
     if isinstance(detected, dict):
         gender = "Male" if detected.get("Man", 0) > detected.get("Woman", 0) else "Female"
@@ -163,14 +159,14 @@ except Exception:
     gender = "Unknown"
 
 # === Display results ===
-st.subheader("Analysis Results")
-st.write(f"**Face Shape:** {pred_shape}")
-st.write(f"**Gender:** {gender}")
-st.write(f"**Hair Ratio:** {hair_ratio:.3f}")
-st.write(f"**Vertical Extent:** {vertical_extent:.3f}")
-st.write(f"**Hair Width:** {hair_width:.3f}")
-st.write(f"**Coverage Top:** {coverage_top:.2f}%")
-st.write(f"**Texture Estimate:** {texture_estimate:.3f}")
+print("\n=== Analysis Results ===")
+print(f"Face Shape: {pred_shape}")
+print(f"Gender: {gender}")
+print(f"Hair Ratio: {hair_ratio:.3f}")
+print(f"Vertical Extent: {vertical_extent:.3f}")
+print(f"Hair Width: {hair_width:.3f}")
+print(f"Coverage Top: {coverage_top:.2f}%")
+print(f"Texture Estimate: {texture_estimate:.3f}")
 
 # === Haircut Suggestions ===
 if os.path.exists(HAIRCUT_DATASET):
@@ -204,8 +200,8 @@ if os.path.exists(HAIRCUT_DATASET):
         if not merged.empty:
             merged["ratio_diff"] = abs(merged["hair_ratio"] - hair_ratio)
             merged = merged.sort_values(by=["count", "ratio_diff"], ascending=[False, True])
-            st.subheader("💇 Recommended Haircuts")
+            print("\n💇 Recommended Haircuts:")
             for i, row in enumerate(merged.itertuples(index=False), 1):
-                st.write(f"{i}. {row.haircut_name} — {row.count} samples | avg ratio: {row.hair_ratio:.3f}")
+                print(f"{i}. {row.haircut_name} — {row.count} samples | avg ratio: {row.hair_ratio:.3f}")
 else:
-    st.warning("❌ haircut_dataset.csv not found.")
+    print("❌ haircut_dataset.csv not found.")

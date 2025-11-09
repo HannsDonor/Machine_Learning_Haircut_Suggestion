@@ -4,30 +4,28 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install OS dependencies for OpenCV and general usage
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libgl1 \
-    libglib2.0-0 \
-    wget \
-    unzip \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements.txt
+# Copy requirements
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python packages
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
 COPY . .
 
-# Create uploads directory
-RUN mkdir -p uploads
-
-# Expose the port your Flask app will run on
+# Expose port for Flask
 EXPOSE 5000
 
-# Command to run the app
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+# Run Flask with Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "prototype9:app"]

@@ -1,36 +1,20 @@
-# Base image
+# Base image with Python 3.11
 FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install OS dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        cmake \
-        libglib2.0-0 \
-        libsm6 \
-        libxrender1 \
-        libxext6 \
-        libsndfile1 \
-        ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
-# Upgrade pip
-RUN pip install --upgrade pip
-
 # Copy requirements first for caching
 COPY requirements.txt .
 
-# Install Python dependencies
-# --use-feature=fast-deps can speed up installation for many packages
-RUN pip install --no-cache-dir --use-feature=fast-deps -r requirements.txt
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app code
+# Copy the rest of your app
 COPY . .
 
-# Expose port (if your app uses Flask/Streamlit)
-EXPOSE 8501
+# Expose port (Railway will map it)
+EXPOSE 5000
 
-# Default command (example: Streamlit)
-CMD ["streamlit", "run", "app.py"]
+# Command to run
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:5000"]

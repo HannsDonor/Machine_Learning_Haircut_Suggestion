@@ -1,27 +1,19 @@
-from flask import Flask, request, jsonify
-import os
-from prototype9 import analyze_image  # refactor your code into a function
+from fastapi import FastAPI, UploadFile, File
+import numpy as np
+import cv2
+from prototype9 import analyze_frame
 
-app = Flask(__name__)
+app = FastAPI()
 
-@app.route("/")
-def home():
-    return "Face & Hair Analyzer API is running."
+@app.post("/analyze")
+async def analyze(file: UploadFile = File(...)):
+    # Read uploaded file into memory
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if frame is None:
+        return {"error": "Invalid image data"}
 
-@app.route("/analyze", methods=["POST"])
-def analyze():
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-
-    file = request.files["file"]
-    filename = os.path.join("uploads", file.filename)
-    os.makedirs("uploads", exist_ok=True)
-    file.save(filename)
-
-    # Call your analysis function (refactor your prototype9.py)
-    result = analyze_image(filename)
-    
-    return jsonify(result)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    # Run analysis
+    result = analyze_frame(frame)
+    return {"results": result}

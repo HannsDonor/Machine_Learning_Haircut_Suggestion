@@ -43,6 +43,8 @@ _analyze_frame = None
 async def load_models(use_stub: bool = False):
     """
     Call from startup. If use_stub is True, install a lightweight stub for fast testing.
+    - To debug Railway routing quickly, set use_stub=True then redeploy.
+    - For production use, set use_stub=False (default) so init_models() runs.
     """
     global models_ready, _analyze_frame
     try:
@@ -66,7 +68,8 @@ async def load_models(use_stub: bool = False):
 
 @app.on_event("startup")
 async def on_startup():
-    # Toggle use_stub to True while debugging on Railway to confirm routing works
+    # Toggle use_stub to True while debugging on Railway to confirm routing works.
+    # For production set use_stub=False.
     asyncio.create_task(load_models(use_stub=False))
 
 @app.post("/analyze")

@@ -26,4 +26,4 @@ COPY . .
 
 # Default command to run your script
 # Replace main.py with the actual filename of your script
-CMD ["python", "main.py"]
+CMD ["python", "app.py"]

@@ -37,19 +37,30 @@ def health_check():
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
+    print(f"Received file: {file.filename}", flush=True)
+
     if not models_ready or _analyze_frame is None:
+        print("Model not ready", flush=True)
         return JSONResponse(status_code=503, content={"error": "Model not ready"})
 
     try:
         contents = await file.read()
+        print(f"File size: {len(contents)} bytes", flush=True)
+
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
         if img is None:
+            print("Failed to decode image", flush=True)
             return JSONResponse(status_code=400, content={"error": "Invalid image format"})
 
+        print(f"Image shape: {img.shape}", flush=True)
+
         result = _analyze_frame(img)
-        return JSONResponse(content={"suggestion": result})
+        print(f"Prediction result: {result}", flush=True)
+
+        return JSONResponse(content=result)
     except Exception as e:
+        print("Exception in /predict:", flush=True)
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": str(e)})

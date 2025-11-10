@@ -12,6 +12,7 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from deepface import DeepFace
+import tempfile
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 HAIR_MODEL_PATH = os.path.join(SCRIPT_DIR, "hair_segmenter.tflite")
@@ -192,14 +193,19 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
         hair_ratio = vertical_extent = coverage_top = texture_estimate = hair_width = 0.0
 
     try:
-        analysis = DeepFace.analyze(
-        img=rgb,
-        actions=["gender"],
-        enforce_detection=False,
-        detector_backend="opencv",
-        prog_bar=False
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            temp_path = tmp.name
+            cv2.imwrite(temp_path, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
 
+        analysis = DeepFace.analyze(
+            img_path=temp_path,
+            actions=["gender"],
+            enforce_detection=False,
+            detector_backend="retinaface",  # more robust than opencv
         )
+
+        os.remove(temp_path)
+
         detected = analysis[0]["gender"] if isinstance(analysis, list) else analysis.get("gender")
         if isinstance(detected, dict):
             gender = "Male" if detected.get("Man", 0) > detected.get("Woman", 0) else "Female"

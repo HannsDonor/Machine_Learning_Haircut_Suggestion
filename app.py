@@ -39,34 +39,22 @@ def health():
 
 # /ready shows whether models finished loading
 models_ready = False
-@app.get("/ready")
-def ready():
-    return {"ready": models_ready}
-
-# analyze wiring
 _analyze_frame = None
 
-# Background loader to import and initialize prototype9 safely
-async def load_models(use_stub: bool = False):
-    """
-    Background initialization.
-    - use_stub True installs a minimal stub (fast, low memory) for routing checks.
-    - use_stub False runs prototype9.init_models() (may be memory heavy).
-    """
+# Background loader
+async def load_models(use_stub: bool = True):
     global models_ready, _analyze_frame
     try:
-        import prototype9  # must exist in repo
-
+        import prototype9
         if use_stub:
-            print("Model loader: installing stub (use_stub=True)", flush=True)
+            print("Model loader: installing stub", flush=True)
             await asyncio.to_thread(prototype9.install_stub_for_testing)
             _analyze_frame = prototype9.analyze_frame
-            print("Model loader: stub installed", flush=True)
         else:
-            print("Model loader: init_models (use_stub=False)", flush=True)
+            print("Model loader: initializing real models", flush=True)
             await asyncio.to_thread(prototype9.init_models)
             _analyze_frame = prototype9.analyze_frame
-            print("Model loader: finished", flush=True)
+        print("Model loader: finished", flush=True)
     except Exception:
         print("Model loader exception:", file=sys.stderr, flush=True)
         traceback.print_exc()
@@ -76,28 +64,27 @@ async def load_models(use_stub: bool = False):
 
 @app.on_event("startup")
 async def on_startup():
-    # Toggle via env var without editing code
-    use_stub_env = os.environ.get("USE_MODEL_STUB", "false").lower()
+    # Check env var to decide whether to use stub
+    use_stub_env = os.environ.get("USE_MODEL_STUB", "true").lower()
     use_stub = use_stub_env in ("1", "true", "yes")
     asyncio.create_task(load_models(use_stub=use_stub))
+
+@app.get("/ready")
+def ready():
+    return {"ready": models_ready}
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     if not models_ready or _analyze_frame is None:
         raise HTTPException(status_code=503, detail="Models still loading, try again shortly")
-
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if frame is None:
         raise HTTPException(status_code=400, detail="Invalid image data")
-
     try:
-        # Run CPU-bound inference in a thread to avoid blocking the event loop
         result = await asyncio.to_thread(_analyze_frame, frame)
     except Exception:
-        print("Analysis error:", file=sys.stderr, flush=True)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Analysis failed")
-
     return {"results": result}

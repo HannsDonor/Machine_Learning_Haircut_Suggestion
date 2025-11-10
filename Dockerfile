@@ -51,4 +51,4 @@ EXPOSE 8080
 # -----------------------
 # Start FastAPI app
 # -----------------------
-CMD ["bash", "-lc", "python start.py"]
+CMD ["python", "start.py"]

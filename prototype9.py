@@ -107,8 +107,9 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
     face_mesh = _mp_face_mesh
     haircut_df = _haircut_df
 
-    h, w, _ = frame_bgr.shape
     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    rgb = cv2.resize(rgb, (400, 400))
+    h, w, _ = rgb.shape
 
     try:
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
@@ -178,7 +179,7 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
             hair_ratio = _safe_div(hair_height, head_height)
             vertical_extent = _safe_div((bottom_y - top_forehead_y), h)
             coverage_top = (np.sum(hair_mask[:max(1, int(h / 4)), :]) / (w * max(1, int(h / 4)))) * 100
-            gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
             hair_pixels = np.sum(hair_mask)
             texture_estimate = 0.0
             if hair_pixels > 0:
@@ -191,13 +192,21 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
         hair_ratio = vertical_extent = coverage_top = texture_estimate = hair_width = 0.0
 
     try:
-        analysis = DeepFace.analyze(img_path=rgb, actions=["gender"], enforce_detection=False)
+        analysis = DeepFace.analyze(
+        img=rgb,
+        actions=["gender"],
+        enforce_detection=False,
+        detector_backend="opencv",
+        prog_bar=False
+
+        )
         detected = analysis[0]["gender"] if isinstance(analysis, list) else analysis.get("gender")
         if isinstance(detected, dict):
             gender = "Male" if detected.get("Man", 0) > detected.get("Woman", 0) else "Female"
         else:
             gender = str(detected).capitalize()
     except Exception:
+        traceback.print_exc()
         gender = "Unknown"
 
     results_dict: Dict[str, Any] = {
@@ -213,7 +222,7 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
 
     try:
         if haircut_df is not None:
-            df = haircut_df.copy()
+            df = haircut_df
             gender_lower = gender.strip().lower()
             face_shape_upper = pred_shape.strip().upper()
             global_avg = df.groupby("haircut_name").agg({

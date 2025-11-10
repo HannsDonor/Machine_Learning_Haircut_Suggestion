@@ -5,6 +5,7 @@ import traceback
 import sys
 import cv2
 import numpy as np
+import gc
 import prototype9  # Your model logic lives here
 
 app = FastAPI()
@@ -19,13 +20,11 @@ async def startup_event():
         print("Model loader: initializing real models", flush=True)
         await asyncio.to_thread(prototype9.init_models)
         _analyze_frame = prototype9.analyze_frame
+        models_ready = True
         print("Model loader: finished", flush=True)
     except Exception:
         print("Model loader exception:", file=sys.stderr, flush=True)
         traceback.print_exc()
-    finally:
-        models_ready = True
-        print(f"Model loader: models_ready={models_ready}", flush=True)
 
 @app.get("/")
 def root():
@@ -54,11 +53,14 @@ async def predict(file: UploadFile = File(...)):
             print("Failed to decode image", flush=True)
             return JSONResponse(status_code=400, content={"error": "Invalid image format"})
 
-        print(f"Image shape: {img.shape}", flush=True)
+        print(f"Original shape: {img.shape}", flush=True)
+        img = cv2.resize(img, (256, 256))
+        print(f"Resized shape: {img.shape}", flush=True)
 
         result = _analyze_frame(img)
         print(f"Prediction result: {result}", flush=True)
 
+        gc.collect()
         return JSONResponse(content=result)
     except Exception as e:
         print("Exception in /predict:", flush=True)

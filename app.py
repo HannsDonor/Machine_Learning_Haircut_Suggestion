@@ -2,6 +2,7 @@ from fastapi import FastAPI
 import asyncio
 import traceback
 import sys
+import prototype9  # Your model logic lives here
 
 app = FastAPI()
 
@@ -10,12 +11,8 @@ _analyze_frame = None
 
 @app.on_event("startup")
 async def startup_event():
-    await load_models()
-
-async def load_models():
     global models_ready, _analyze_frame
     try:
-        import prototype9
         print("Model loader: initializing real models", flush=True)
         await asyncio.to_thread(prototype9.init_models)
         _analyze_frame = prototype9.analyze_frame

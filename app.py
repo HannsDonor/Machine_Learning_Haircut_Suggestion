@@ -53,9 +53,6 @@ async def predict(file: UploadFile = File(...)):
             print("Failed to decode image", flush=True)
             return JSONResponse(status_code=400, content={"error": "Invalid image format"})
 
-        print(f"Original shape: {img.shape}", flush=True)
-        img = cv2.resize(img, (256, 256))
-        print(f"Resized shape: {img.shape}", flush=True)
 
         result = _analyze_frame(img)
         print(f"Prediction result: {result}", flush=True)
@@ -66,3 +63,4 @@ async def predict(file: UploadFile = File(...)):
         print("Exception in /predict:", flush=True)
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": str(e)})
+

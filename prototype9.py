@@ -111,6 +111,7 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     h, w, _ = rgb.shape
 
+    # Hair segmentation
     try:
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         seg_result = segmenter.segment(mp_image)
@@ -119,6 +120,7 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
     except Exception:
         hair_mask = np.zeros((h, w), dtype=np.uint8)
 
+    # Clean mask
     try:
         kernel = np.ones((5, 5), np.uint8)
         hair_mask = cv2.morphologyEx(hair_mask, cv2.MORPH_CLOSE, kernel)
@@ -126,16 +128,20 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
     except Exception:
         pass
 
+    # Face landmarks and shape prediction — EXACTLY as in standalone debug script
     try:
         results = face_mesh.process(rgb)
         if not results.multi_face_landmarks:
             return {"error": "No face detected"}
-        points = [(lm.x * w, lm.y * h) for lm in results.multi_face_landmarks[0].landmark]
-    except Exception:
-        traceback.print_exc()
-        return {"error": "Face mesh failure"}
 
-    try:
+        points = [(lm.x * w, lm.y * h) for lm in results.multi_face_landmarks[0].landmark]
+
+        # Reference: inter-eye distance (points 33 and 263)
+        ref_len = _euclidean(points[33], points[263])
+        if ref_len < 5:
+            ref_len = max(ref_len, 1.0)  # fallback to avoid zero division
+
+        # Key landmarks — indices identical to debug script
         top_forehead = np.array(points[10])
         chin = np.array(points[152])
         left_temple = np.array(points[71])
@@ -145,10 +151,11 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
         left_jaw = np.array(points[172])
         right_jaw = np.array(points[435])
 
-        face_length = _euclidean(top_forehead, chin)
-        forehead_width = _euclidean(left_temple, right_temple)
-        cheek_width = _euclidean(left_cheek, right_cheek)
-        jaw_width = _euclidean(left_jaw, right_jaw)
+        # Compute features — formulas identical
+        face_length = _euclidean(top_forehead, chin) / ref_len
+        forehead_width = _euclidean(left_temple, right_temple) / ref_len
+        cheek_width = _euclidean(left_cheek, right_cheek) / ref_len
+        jaw_width = _euclidean(left_jaw, right_jaw) / ref_len
 
         face_ratio = _safe_div(face_length, cheek_width)
         jaw_to_forehead = _safe_div(jaw_width, forehead_width)
@@ -156,16 +163,19 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
         left_angle = _calculate_angle(left_cheek, left_temple, chin)
         right_angle = -_calculate_angle(right_cheek, right_temple, chin)
 
+        # Prediction — identical pipeline
         feat = np.array([[face_length, forehead_width, cheek_width, jaw_width,
                           face_ratio, jaw_to_forehead, cheek_to_forehead,
                           left_angle, right_angle]])
         feat_scaled = scaler.transform(feat)
         pred_enc = rf_face.predict(feat_scaled)[0]
         pred_shape = le.inverse_transform([pred_enc])[0].strip().upper()
+
     except Exception:
         traceback.print_exc()
         pred_shape = "UNKNOWN"
 
+    # Hair metrics
     try:
         ys, xs = np.where(hair_mask > 0)
         if len(ys) > 0:
@@ -191,6 +201,7 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
         traceback.print_exc()
         hair_ratio = vertical_extent = coverage_top = texture_estimate = hair_width = 0.0
 
+    # Gender detection via DeepFace
     try:
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
             temp_path = tmp.name
@@ -200,7 +211,7 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
             img_path=temp_path,
             actions=["gender"],
             enforce_detection=False,
-            detector_backend="retinaface",  # more robust than opencv
+            detector_backend="retinaface",
         )
 
         os.remove(temp_path)
@@ -225,6 +236,7 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
         "suggestions": []
     }
 
+    # Haircut suggestions
     try:
         if haircut_df is not None:
             df = haircut_df
@@ -259,4 +271,3 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
         traceback.print_exc()
 
     return results_dict
-

@@ -1,5 +1,5 @@
 # -----------------------
-# Base image: slim, Python 3.10
+# Base image: slim, Python 3.11
 # -----------------------
 FROM python:3.11-slim
 
@@ -8,14 +8,10 @@ FROM python:3.11-slim
 # -----------------------
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-
-# TensorFlow CPU only, low memory/thread usage
 ENV TF_ENABLE_ONEDNN_OPTS=0
 ENV CUDA_VISIBLE_DEVICES=""
 ENV OMP_NUM_THREADS=1
 ENV MKL_NUM_THREADS=1
-
-# Hugging Face expects the app to listen on port 8080
 ENV PORT=8080
 
 # -----------------------
@@ -34,10 +30,12 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # -----------------------
-# Install Python dependencies
+# Copy requirements and install Python dependencies
 # -----------------------
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install deepface==0.0.93 && \
+    pip show deepface
 
 # -----------------------
 # Pre-download DeepFace retinaface.h5 weights
@@ -51,7 +49,7 @@ RUN mkdir -p /root/.deepface/weights && \
 COPY . .
 
 # -----------------------
-# Expose port (HF Spaces will bind 8080)
+# Expose port
 # -----------------------
 EXPOSE 8080
 
@@ -59,5 +57,3 @@ EXPOSE 8080
 # Start FastAPI app
 # -----------------------
 CMD ["python", "start.py"]
-
-

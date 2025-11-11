@@ -1,7 +1,7 @@
 # -----------------------
 # Base image: slim, Python 3.10
 # -----------------------
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # -----------------------
 # Environment variables
@@ -59,4 +59,5 @@ EXPOSE 8080
 # Start FastAPI app
 # -----------------------
 CMD ["python", "start.py"]
+
 

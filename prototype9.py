@@ -109,7 +109,6 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
     haircut_df = _haircut_df
 
     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-    rgb = cv2.resize(rgb, (256, 256))
     h, w, _ = rgb.shape
 
     try:
@@ -260,3 +259,4 @@ def analyze_frame(frame_bgr: np.ndarray) -> Dict[str, Any]:
         traceback.print_exc()
 
     return results_dict
+

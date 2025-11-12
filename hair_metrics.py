@@ -67,9 +67,9 @@ def analyze_hair(img):
     texture_estimate = float(np.sum(cv2.Canny(gray, 100, 200)[hair_mask>0]) / hair_pixels) if hair_pixels>0 else 0.0
 
     return {
-        "hair_ratio": round(hair_ratio, 3),
-        "vertical_extent": round(vertical_extent, 3),
-        "hair_width": round(hair_width, 3),
-        "coverage_top_percent": round(coverage_top, 2),
-        "texture_estimate": round(texture_estimate, 3)
+        "hair_ratio": float(round(hair_ratio, 3)),
+        "vertical_extent": float(round(vertical_extent, 3)),
+        "hair_width": float(round(hair_width, 3)),
+        "coverage_top_percent": float(round(coverage_top, 2)),
+        "texture_estimate": float(round(texture_estimate, 3))
     }

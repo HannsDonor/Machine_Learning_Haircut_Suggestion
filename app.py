@@ -7,11 +7,24 @@ import cv2
 import numpy as np
 import gc
 import prototype9  # Your model logic lives here
+from hair_metrics import analyze_hair
 
 app = FastAPI()
 
 models_ready = False
 _analyze_frame = None
+
+@app.post("/hair-metrics")
+async def hair_metrics(file: UploadFile = File(...)):
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if img is None:
+        return JSONResponse(status_code=400, content={"error": "Invalid image format"})
+
+    result = analyze_hair(img)
+    return JSONResponse(content=result)
 
 @app.on_event("startup")
 async def startup_event():
@@ -53,7 +66,6 @@ async def predict(file: UploadFile = File(...)):
             print("Failed to decode image", flush=True)
             return JSONResponse(status_code=400, content={"error": "Invalid image format"})
 
-
         result = _analyze_frame(img)
         print(f"Prediction result: {result}", flush=True)
 
@@ -63,4 +75,3 @@ async def predict(file: UploadFile = File(...)):
         print("Exception in /predict:", flush=True)
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": str(e)})
-

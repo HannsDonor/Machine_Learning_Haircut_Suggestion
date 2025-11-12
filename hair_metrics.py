@@ -1,8 +1,9 @@
 from fastapi import FastAPI, UploadFile, File
-import os, cv2, numpy as np, math
+import os, cv2, numpy as np, math, tempfile, traceback
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+from deepface import DeepFace
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 HAIR_MODEL_PATH = os.path.join(SCRIPT_DIR, "hair_segmenter.tflite")
@@ -66,10 +67,35 @@ def analyze_hair(img):
     hair_pixels = np.sum(hair_mask)
     texture_estimate = float(np.sum(cv2.Canny(gray, 100, 200)[hair_mask>0]) / hair_pixels) if hair_pixels>0 else 0.0
 
+    # Gender detection via DeepFace
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            temp_path = tmp.name
+            cv2.imwrite(temp_path, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+
+        analysis = DeepFace.analyze(
+            img_path=temp_path,
+            actions=["gender"],
+            enforce_detection=False,
+            detector_backend="retinaface",
+        )
+
+        os.remove(temp_path)
+
+        detected = analysis[0]["gender"] if isinstance(analysis, list) else analysis.get("gender")
+        if isinstance(detected, dict):
+            gender = "Male" if detected.get("Man", 0) > detected.get("Woman", 0) else "Female"
+        else:
+            gender = str(detected).capitalize()
+    except Exception:
+        traceback.print_exc()
+        gender = "Unknown"
+
     return {
         "hair_ratio": float(round(hair_ratio, 3)),
         "vertical_extent": float(round(vertical_extent, 3)),
         "hair_width": float(round(hair_width, 3)),
         "coverage_top_percent": float(round(coverage_top, 2)),
-        "texture_estimate": float(round(texture_estimate, 3))
+        "texture_estimate": float(round(texture_estimate, 3)),
+        "gender": gender
     }

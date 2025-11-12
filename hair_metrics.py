@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File
-import os, cv2, numpy as np, math, shutil
+import os, cv2, numpy as np, math
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -21,8 +21,7 @@ def init_segmenter():
 
 segmenter = init_segmenter()
 
-def analyze_hair(file_path):
-    img = cv2.imread(file_path)
+def analyze_hair(img):
     if img is None:
         return {"error": "Cannot read image."}
 
@@ -74,12 +73,3 @@ def analyze_hair(file_path):
         "coverage_top_percent": round(coverage_top, 2),
         "texture_estimate": round(texture_estimate, 3)
     }
-
-@app.post("/hair-metrics")
-async def hair_metrics(file: UploadFile = File(...)):
-    temp_path = f"/tmp/{file.filename}"
-    with open(temp_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    result = analyze_hair(temp_path)
-    os.remove(temp_path)
-    return result
